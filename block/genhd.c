@@ -741,7 +741,7 @@ void __init printk_all_partitions(void)
 		struct hd_struct *part;
 		char name_buf[BDEVNAME_SIZE];
 		char devt_buf[BDEVT_SIZE];
-		u8 uuid[PARTITION_META_INFO_UUIDLTH * 2 + 1];
+		char uuid[37]; /* UUID text includes four hyphens and a terminator. */
 
 		/*
 		 * Don't show empty devices or things that have been

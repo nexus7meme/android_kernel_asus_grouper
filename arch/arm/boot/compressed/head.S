@@ -241,6 +241,52 @@ restart:	adr	r0, LC0
  * Because we always copy ahead, we need to do it from the end and go
  * backward in case the source and destination overlap.
  */
+#ifdef CONFIG_MACH_GROUPER
+		/*
+		 * The grouper bootloader places initrd at a fixed address even
+		 * for fastboot boot images with a different ramdisk_addr.
+		 * A larger zImage can overlap it when relocating above the
+		 * inflated kernel. Keep the compressed image and scratch space
+		 * clear of the actual ATAG_INITRD2 region.
+		 * r4/r6/r7/r8 remain live; the other registers are reloaded at
+		 * restart or overwritten by the relocation copy below.
+		 */
+		mov	r0, r8
+		add	lr, r8, #0x4000	@ bound legacy tag traversal
+.L_grouper_next_tag:
+		cmp	r0, lr
+		bhs	.L_grouper_tags_done
+		ldr	r1, [r0]
+		cmp	r1, #2
+		blo	.L_grouper_tags_done
+		cmp	r1, #0x1000
+		bhi	.L_grouper_tags_done
+		ldr	r2, [r0, #4]
+		ldr	r3, =0x54420005	@ ATAG_INITRD2
+		cmp	r2, r3
+		bne	.L_grouper_skip_tag
+		cmp	r1, #4
+		blo	.L_grouper_tags_done
+		ldr	r2, [r0, #8]	@ initrd physical start
+		ldr	r3, [r0, #12]	@ initrd length
+		add	r3, r2, r3	@ initrd end
+		cmp	r10, r3
+		bhs	.L_grouper_tags_done
+		adr	r11, restart
+		bic	r11, r11, #31
+		sub	r12, r6, r11
+		add	r12, r12, r10
+		add	r12, r12, #0x20000	@ stack/malloc/alignment margin
+		cmp	r12, r2
+		bls	.L_grouper_tags_done
+		mov	r10, r3		@ relocate after initrd instead
+		b	.L_grouper_tags_done
+.L_grouper_skip_tag:
+		add	r0, r0, r1, lsl #2
+		b	.L_grouper_next_tag
+.L_grouper_tags_done:
+#endif
+
 		/*
 		 * Bump to the next 256-byte boundary with the size of
 		 * the relocation code added. This avoids overwriting

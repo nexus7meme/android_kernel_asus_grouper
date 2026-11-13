@@ -699,6 +699,8 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 
 	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, dev->wiphy_idx);
 	NLA_PUT_STRING(msg, NL80211_ATTR_WIPHY_NAME, wiphy_name(&dev->wiphy));
+	/* This legacy wiphy supports none of the newer feature-mask bits. */
+	NLA_PUT_U32(msg, NL80211_ATTR_FEATURE_FLAGS, 0);
 
 	NLA_PUT_U32(msg, NL80211_ATTR_GENERATION,
 		    cfg80211_rdev_list_generation);
@@ -1443,6 +1445,8 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, dev->ifindex);
 	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
 	NLA_PUT_STRING(msg, NL80211_ATTR_IFNAME, dev->name);
+	/* Interface discovery in modern wificond requires the real netdev MAC. */
+	NLA_PUT(msg, NL80211_ATTR_MAC, ETH_ALEN, dev->dev_addr);
 	NLA_PUT_U32(msg, NL80211_ATTR_IFTYPE, dev->ieee80211_ptr->iftype);
 
 	NLA_PUT_U32(msg, NL80211_ATTR_GENERATION,

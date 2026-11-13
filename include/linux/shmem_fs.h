@@ -43,6 +43,7 @@ static inline struct shmem_inode_info *SHMEM_I(struct inode *inode)
  * Functions in mm/shmem.c called directly from elsewhere:
  */
 extern int shmem_init(void);
+extern long shmem_fcntl(struct file *file, unsigned int cmd, unsigned long arg);
 extern int shmem_fill_super(struct super_block *sb, void *data, int silent);
 extern struct file *shmem_file_setup(const char *name,
 					loff_t size, unsigned long flags);

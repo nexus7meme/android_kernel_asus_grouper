@@ -2142,6 +2142,34 @@ int tcp_disconnect(struct sock *sk, int flags)
 }
 EXPORT_SYMBOL(tcp_disconnect);
 
+/* Linux 4.9's diagnostic abort, adapted to the pre-request-socket layout. */
+int tcp_abort(struct sock *sk, int err)
+{
+	if (sk->sk_state == TCP_TIME_WAIT)
+		return -EOPNOTSUPP;
+	lock_sock(sk);
+	if (sk->sk_state == TCP_LISTEN) {
+		tcp_set_state(sk, TCP_CLOSE);
+		inet_csk_listen_stop(sk);
+	}
+	local_bh_disable();
+	bh_lock_sock(sk);
+	if (!sock_flag(sk, SOCK_DEAD)) {
+		sk->sk_err = err;
+		smp_wmb();
+		sk->sk_error_report(sk);
+		if (tcp_need_reset(sk->sk_state))
+			tcp_send_active_reset(sk, GFP_ATOMIC);
+		tcp_done(sk);
+	}
+	bh_unlock_sock(sk);
+	local_bh_enable();
+	release_sock(sk);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tcp_abort);
+
+
 /*
  *	Socket option code for TCP.
  */
@@ -2522,6 +2550,13 @@ void tcp_get_info(struct sock *sk, struct tcp_info *info)
 	info->tcpi_rcv_space = tp->rcvq_space.space;
 
 	info->tcpi_total_retrans = tp->total_retrans;
+	/* This kernel has no pacing limit (Linux's unlimited sentinel). */
+	info->tcpi_pacing_rate = ~0ULL;
+	info->tcpi_max_pacing_rate = ~0ULL;
+	info->tcpi_bytes_acked = atomic64_read(&tp->diag_bytes_acked);
+	info->tcpi_bytes_received = atomic64_read(&tp->diag_bytes_received);
+	info->tcpi_segs_out = ACCESS_ONCE(tp->segs_out);
+	info->tcpi_segs_in = ACCESS_ONCE(tp->segs_in);
 }
 EXPORT_SYMBOL_GPL(tcp_get_info);
 
@@ -3256,6 +3291,8 @@ void __init tcp_init(void)
 	unsigned long jiffy = jiffies;
 
 	BUILD_BUG_ON(sizeof(struct tcp_skb_cb) > sizeof(skb->cb));
+	BUILD_BUG_ON(offsetof(struct tcp_sock, inet_conn) != 0);
+	BUILD_BUG_ON(sizeof(struct tcp_info) != 144);
 
 	percpu_counter_init(&tcp_sockets_allocated, 0);
 	percpu_counter_init(&tcp_orphan_count, 0);

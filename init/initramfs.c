@@ -10,10 +10,13 @@
 #include <linux/utime.h>
 
 static __initdata char *message;
+static __initdata int debug_flush_seen;
 static void __init error(char *x)
 {
-	if (!message)
+	if (!message) {
+		pr_err("initramfs: %s (caller %pS)\n", x, __builtin_return_address(0));
 		message = x;
+	}
 }
 
 /* link hash */
@@ -404,6 +407,12 @@ static int __init flush_buffer(void *bufv, unsigned len)
 	char *buf = (char *) bufv;
 	int written;
 	int origLen = len;
+	if (!debug_flush_seen && len >= 8) {
+		pr_info("initramfs: decoded first bytes %02x %02x %02x %02x, chunk %u\n",
+			(unsigned char)buf[0], (unsigned char)buf[1],
+			(unsigned char)buf[2], (unsigned char)buf[3], len);
+		debug_flush_seen = 1;
+	}
 	if (message)
 		return -1;
 	while ((written = write_buffer(buf, len)) < len && !message) {
@@ -433,6 +442,11 @@ static char * __init unpack_to_rootfs(char *buf, unsigned len)
 	const char *compress_name;
 	static __initdata char msg_buf[64];
 
+	debug_flush_seen = 0;
+	if (len >= 8)
+		pr_info("initramfs: input length %u, first bytes %02x %02x %02x %02x\n",
+			len, (unsigned char)buf[0], (unsigned char)buf[1],
+			(unsigned char)buf[2], (unsigned char)buf[3]);
 	header_buf = kmalloc(110, GFP_KERNEL);
 	symlink_buf = kmalloc(PATH_MAX + N_ALIGN(PATH_MAX) + 1, GFP_KERNEL);
 	name_buf = kmalloc(N_ALIGN(PATH_MAX), GFP_KERNEL);
@@ -461,6 +475,7 @@ static char * __init unpack_to_rootfs(char *buf, unsigned len)
 		this_header = 0;
 		decompress = decompress_method(buf, len, &compress_name);
 		if (decompress) {
+			pr_info("initramfs: decoding %s\n", compress_name);
 			res = decompress(buf, len, NULL, flush_buffer, NULL,
 				   &my_inptr, error);
 			if (res)

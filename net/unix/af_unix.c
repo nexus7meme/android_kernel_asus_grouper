@@ -1387,6 +1387,11 @@ static int unix_accept(struct socket *sock, struct socket *newsock, int flags)
 	/* attach accepted sock to socket */
 	unix_state_lock(tsk);
 	newsock->state = SS_CONNECTED;
+	/* Preserve listener credential/security ancillary-data options. */
+	if (test_bit(SOCK_PASSCRED, &sock->flags))
+		set_bit(SOCK_PASSCRED, &newsock->flags);
+	if (test_bit(SOCK_PASSSEC, &sock->flags))
+		set_bit(SOCK_PASSSEC, &newsock->flags);
 	sock_graft(tsk, newsock);
 	unix_state_unlock(tsk);
 	return 0;

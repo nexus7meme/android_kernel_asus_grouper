@@ -366,6 +366,25 @@ void __init tegra_init_cpu_edp_limits(unsigned int regulator_mA)
 		e[j].freq_limits[1] = (unsigned int)(t[i+j].freq_limits[1]+10) * 10000;
 		e[j].freq_limits[2] = (unsigned int)(t[i+j].freq_limits[2]+10) * 10000;
 		e[j].freq_limits[3] = (unsigned int)(t[i+j].freq_limits[3]+10) * 10000;
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1400
+		/* Only extend the measured T30L bin's cool operating row.
+		 * Preserve cold, >=60 C, regulator and shutdown constraints.
+		 */
+		if (cpu_speedo_id == 7 && tegra_cpu_process_id() == 2 &&
+		    regulator_mA == 6000 && e[j].temperature == 45) {
+			int cpu;
+
+			for (cpu = 0; cpu < ARRAY_SIZE(e[j].freq_limits); cpu++)
+				if (e[j].freq_limits[cpu] == 1300000)
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+                    e[j].freq_limits[cpu] = 1800000;
+#elif defined(CONFIG_TEGRA3_GROUPER_CPU_OC_1600)
+                    e[j].freq_limits[cpu] = 1600000;
+#else
+                    e[j].freq_limits[cpu] = 1400000;
+#endif
+		}
+#endif
 	}
 
 	if (edp_limits != edp_default_limits)

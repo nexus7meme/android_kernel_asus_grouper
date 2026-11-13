@@ -21,7 +21,13 @@
 #ifndef _TEGRA_DVFS_H_
 #define _TEGRA_DVFS_H_
 
-#define MAX_DVFS_FREQS	21
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+#define MAX_DVFS_FREQS 23
+#elif defined(CONFIG_TEGRA3_GROUPER_CPU_OC_1600)
+#define MAX_DVFS_FREQS 22
+#else
+#define MAX_DVFS_FREQS 21
+#endif
 #define DVFS_RAIL_STATS_TOP_BIN	40
 
 struct clk;

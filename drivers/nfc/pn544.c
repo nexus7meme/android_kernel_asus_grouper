@@ -41,6 +41,7 @@
 struct pn544_dev	{
 	wait_queue_head_t	read_wq;
 	struct mutex		read_mutex;
+	struct mutex		write_mutex;
 	struct i2c_client	*client;
 	struct miscdevice	pn544_device;
 	unsigned int 		ven_gpio;
@@ -160,8 +161,16 @@ static ssize_t pn544_dev_write(struct file *filp, const char __user *buf,
 	}
 
 	pr_debug("%s : writing %zu bytes.\n", __func__, count);
-	/* Write data */
+	/* The first transfer wakes a standby PN544 and may be NACKed.
+	 * Match the upstream PN544 HCI driver: wait, then retry once only
+	 * for -EREMOTEIO. Never replay a partial successful transfer.
+	 */
+	mutex_lock(&pn544_dev->write_mutex);
 	ret = i2c_master_send(pn544_dev->client, tmp, count);
+	if (ret == -EREMOTEIO) {
+		usleep_range(6000, 10000);
+		ret = i2c_master_send(pn544_dev->client, tmp, count);
+	}
 	if (ret != count) {
 		pr_err("%s : i2c_master_send returned %d\n", __func__, ret);
 		ret = -EIO;
@@ -170,6 +179,7 @@ static ssize_t pn544_dev_write(struct file *filp, const char __user *buf,
 	/* pn544 seems to be slow in handling I2C write requests
 	 * so add 1ms delay after I2C send oparation */
 	udelay(1000);
+	mutex_unlock(&pn544_dev->write_mutex);
 
 	return ret;
 }
@@ -309,6 +319,7 @@ static int pn544_probe(struct i2c_client *client,
 	/* init mutex and queues */
 	init_waitqueue_head(&pn544_dev->read_wq);
 	mutex_init(&pn544_dev->read_mutex);
+	mutex_init(&pn544_dev->write_mutex);
 	spin_lock_init(&pn544_dev->irq_enabled_lock);
 
 	pn544_dev->pn544_device.minor = MISC_DYNAMIC_MINOR;
@@ -341,6 +352,7 @@ err_request_irq_failed:
 	misc_deregister(&pn544_dev->pn544_device);
 err_misc_register:
 	mutex_destroy(&pn544_dev->read_mutex);
+	mutex_destroy(&pn544_dev->write_mutex);
 	kfree(pn544_dev);
 err_exit:
 	if (pn544_dev->firm_gpio)
@@ -360,6 +372,7 @@ static int pn544_remove(struct i2c_client *client)
 	free_irq(client->irq, pn544_dev);
 	misc_deregister(&pn544_dev->pn544_device);
 	mutex_destroy(&pn544_dev->read_mutex);
+	mutex_destroy(&pn544_dev->write_mutex);
 	gpio_free(pn544_dev->irq_gpio);
 	gpio_free(pn544_dev->ven_gpio);
 	if (pn544_dev->firm_gpio)

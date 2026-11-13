@@ -27,6 +27,7 @@
 #define STACK_TOP	((current->personality & ADDR_LIMIT_32BIT) ? \
 			 TASK_SIZE : TASK_SIZE_26)
 #define STACK_TOP_MAX	TASK_SIZE
+#define HAVE_ARCH_PICK_MMAP_LAYOUT
 #endif
 
 struct debug_info {

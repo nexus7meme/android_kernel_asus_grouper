@@ -29,6 +29,7 @@
 #include <linux/file.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/fcntl.h>
 #include <linux/swap.h>
 
 static struct vfsmount *shm_mnt;
@@ -2471,6 +2472,26 @@ EXPORT_SYMBOL_GPL(shmem_truncate_range);
 #endif /* CONFIG_SHMEM */
 
 /* common code */
+
+long shmem_fcntl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+#ifdef CONFIG_SHMEM
+	if (file->f_op != &shmem_file_operations)
+		return -EINVAL;
+	/* No mutable seals are advertised: MFD_ALLOW_SEALING is rejected.
+	 * Like a normal memfd without that flag, these files permanently have
+	 * F_SEAL_SEAL, and cannot acquire any further seals.
+	 */
+	if (cmd == F_GET_SEALS)
+		return F_SEAL_SEAL;
+	if (cmd == F_ADD_SEALS) {
+		if (arg & ~(F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE))
+			return -EINVAL;
+		return -EPERM;
+	}
+#endif
+	return -EINVAL;
+}
 
 /**
  * shmem_file_setup - get an unlinked file living in tmpfs

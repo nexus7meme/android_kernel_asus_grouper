@@ -1368,6 +1368,9 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_DEVICE_AP_SME,
 
+	/* Stable UAPI value; optional modern feature bits are not implemented. */
+	NL80211_ATTR_FEATURE_FLAGS = 143,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

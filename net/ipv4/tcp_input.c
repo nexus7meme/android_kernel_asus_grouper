@@ -3521,6 +3521,8 @@ static int tcp_ack_update_window(struct sock *sk, struct sk_buff *skb, u32 ack,
 		}
 	}
 
+	if (after(ack, tp->snd_una))
+		atomic64_add((u32)(ack - tp->snd_una), &tp->diag_bytes_acked);
 	tp->snd_una = ack;
 
 	return flag;
@@ -3714,6 +3716,8 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		 * Note, we use the fact that SND.UNA>=SND.WL2.
 		 */
 		tcp_update_wl(tp, ack_seq);
+		if (after(ack, tp->snd_una))
+			atomic64_add((u32)(ack - tp->snd_una), &tp->diag_bytes_acked);
 		tp->snd_una = ack;
 		flag |= FLAG_WIN_UPDATE;
 
@@ -4397,6 +4401,9 @@ static void tcp_ofo_queue(struct sock *sk)
 
 		__skb_unlink(skb, &tp->out_of_order_queue);
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
+		if (after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt))
+			atomic64_add((u32)(TCP_SKB_CB(skb)->end_seq - tp->rcv_nxt),
+				     &tp->diag_bytes_received);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (tcp_hdr(skb)->fin)
 			tcp_fin(skb, sk, tcp_hdr(skb));
@@ -4477,6 +4484,9 @@ queue_and_out:
 			skb_set_owner_r(skb, sk);
 			__skb_queue_tail(&sk->sk_receive_queue, skb);
 		}
+		if (after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt))
+			atomic64_add((u32)(TCP_SKB_CB(skb)->end_seq - tp->rcv_nxt),
+				     &tp->diag_bytes_received);
 		tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 		if (skb->len)
 			tcp_event_data_recv(sk, skb);
@@ -5405,6 +5415,9 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 					tcp_rcv_rtt_measure_ts(sk, skb);
 
 					__skb_pull(skb, tcp_header_len);
+					if (after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt))
+						atomic64_add((u32)(TCP_SKB_CB(skb)->end_seq - tp->rcv_nxt),
+							     &tp->diag_bytes_received);
 					tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 					NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPHPHITSTOUSER);
 				}
@@ -5435,6 +5448,9 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 				__skb_pull(skb, tcp_header_len);
 				__skb_queue_tail(&sk->sk_receive_queue, skb);
 				skb_set_owner_r(skb, sk);
+				if (after(TCP_SKB_CB(skb)->end_seq, tp->rcv_nxt))
+					atomic64_add((u32)(TCP_SKB_CB(skb)->end_seq - tp->rcv_nxt),
+						     &tp->diag_bytes_received);
 				tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
 			}
 

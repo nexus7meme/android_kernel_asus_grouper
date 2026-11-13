@@ -109,6 +109,8 @@ static int pmu_core_edp = 1300;	/* LP overdrive 1.3V EDP limit */
 static int pmu_core_edp = 1200;	/* default 1.2V EDP limit */
 #endif
 
+static bool pmu_core_edp_override;
+
 static int board_panel_type;
 static enum power_supply_type pow_supply_type = POWER_SUPPLY_TYPE_MAINS;
 
@@ -559,14 +561,21 @@ __setup("power_supply=", tegra_board_power_supply_type);
 
 int get_core_edp(void)
 {
+#ifdef CONFIG_TEGRA3_GROUPER_GPU_OC_600
+	if (!pmu_core_edp_override && tegra_cpu_speedo_id() == 7 &&
+	    tegra_soc_speedo_id() == 1 && tegra_core_process_id() == 0)
+		return 1300;
+#endif
 	return pmu_core_edp;
 }
 static int __init tegra_pmu_core_edp(char *options)
 {
 	char *p = options;
 	int core_edp = memparse(p, &p);
-	if (core_edp != 0)
+	if (core_edp != 0) {
 		pmu_core_edp = core_edp;
+		pmu_core_edp_override = true;
+	}
 	return 0;
 }
 early_param("core_edp_mv", tegra_pmu_core_edp);

@@ -359,8 +359,12 @@ struct cpu_vfs_cap_data {
 
 #define CAP_WAKE_ALARM            35
 
+/* Allow preventing system suspends. Keep the valid range consistent with
+ * Android's capability sets and the SELinux capability2 block_suspend bit.
+ */
+#define CAP_BLOCK_SUSPEND         36
 
-#define CAP_LAST_CAP         CAP_WAKE_ALARM
+#define CAP_LAST_CAP         CAP_BLOCK_SUSPEND
 
 #define cap_valid(x) ((x) >= 0 && (x) <= CAP_LAST_CAP)
 

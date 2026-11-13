@@ -1146,13 +1146,13 @@ static inline u16 socket_type_to_security_class(int family, int type, int protoc
 	return SECCLASS_SOCKET;
 }
 
-#ifdef CONFIG_PROC_FS
-static int selinux_proc_get_sid(struct dentry *dentry,
+static int selinux_genfs_get_sid(struct dentry *dentry,
 				u16 tclass,
 				u32 *sid)
 {
 	int rc;
 	char *buffer, *path;
+	const char *fstype = dentry->d_sb->s_type->name;
 
 	buffer = (char *)__get_free_page(GFP_KERNEL);
 	if (!buffer)
@@ -1165,23 +1165,15 @@ static int selinux_proc_get_sid(struct dentry *dentry,
 		/* each process gets a /proc/PID/ entry. Strip off the
 		 * PID part to get a valid selinux labeling.
 		 * e.g. /proc/1/net/rpc/nfs -> /net/rpc/nfs */
-		while (path[1] >= '0' && path[1] <= '9') {
+		while (!strcmp(fstype, "proc") && path[1] >= '0' && path[1] <= '9') {
 			path[1] = '/';
 			path++;
 		}
-		rc = security_genfs_sid("proc", path, tclass, sid);
+		rc = security_genfs_sid(fstype, path, tclass, sid);
 	}
 	free_page((unsigned long)buffer);
 	return rc;
 }
-#else
-static int selinux_proc_get_sid(struct dentry *dentry,
-				u16 tclass,
-				u32 *sid)
-{
-	return -EINVAL;
-}
-#endif
 
 /* The inode's security attributes must be initialized before first use. */
 static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dentry)
@@ -1336,9 +1328,11 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 		/* Default to the fs superblock SID. */
 		isec->sid = sbsec->sid;
 
-		if ((sbsec->flags & SE_SBPROC) && !S_ISLNK(inode->i_mode)) {
+		if (((sbsec->flags & SE_SBPROC) ||
+		     !strcmp(inode->i_sb->s_type->name, "sysfs")) &&
+		    !S_ISLNK(inode->i_mode)) {
 			/* We must have a dentry to determine the label on
-			 * procfs inodes */
+			 * procfs and sysfs inodes */
 			if (opt_dentry)
 				/* Called from d_instantiate or
 				 * d_splice_alias. */
@@ -1359,7 +1353,7 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 			if (!dentry)
 				goto out_unlock;
 			isec->sclass = inode_mode_to_security_class(inode->i_mode);
-			rc = selinux_proc_get_sid(dentry, isec->sclass, &sid);
+			rc = selinux_genfs_get_sid(dentry, isec->sclass, &sid);
 			dput(dentry);
 			if (rc)
 				goto out_unlock;

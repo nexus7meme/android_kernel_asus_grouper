@@ -568,7 +568,21 @@ static int fib_check_nh(struct fib_config *cfg, struct fib_info *fi,
 			/* It is not necessary, but requires a bit of thinking */
 			if (fl4.flowi4_scope < RT_SCOPE_LINK)
 				fl4.flowi4_scope = RT_SCOPE_LINK;
-			err = fib_lookup(net, &fl4, &res);
+			/* Validate a gateway against the route's own table first.  An
+			 * unmarked policy lookup can be unreachable while netd is
+			 * constructing a per-network table and its routing rules.
+			 */
+			err = -ENETUNREACH;
+			if (cfg->fc_table) {
+				struct fib_table *table;
+
+				table = fib_get_table(net, cfg->fc_table);
+				if (table)
+					err = fib_table_lookup(table, &fl4, &res,
+							       FIB_LOOKUP_NOREF);
+			}
+			if (err)
+				err = fib_lookup(net, &fl4, &res);
 			if (err) {
 				rcu_read_unlock();
 				return err;

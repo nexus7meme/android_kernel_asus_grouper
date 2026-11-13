@@ -33,10 +33,24 @@ static bool tegra_dvfs_core_disabled;
 static struct dvfs *cpu_dvfs;
 
 static const int cpu_millivolts[MAX_DVFS_FREQS] = {
-	750, 775, 825, 850, 875, 900, 916, 950, 975, 1000, 1007, 1025, 1050, 1075, 1100, 1125, 1150, 1175, 1200, 1212, 1237};
+	750, 775, 825, 850, 875, 900, 916, 950, 975, 1000, 1007, 1025, 1050, 1075, 1100, 1125, 1150, 1175, 1200, 1212, 1237
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1600
+    , 1250
+#endif
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    , 1350
+#endif
+};
 
 static const unsigned int cpu_cold_offs_mhz[MAX_DVFS_FREQS] = {
-	50,  50,  50,  50,  50,  50,  50,  50,  50,  50,   50,   50,   50,   50,   50,   50,   50,   50,   50,   50,   50};
+	50,  50,  50,  50,  50,  50,  50,  50,  50,  50,   50,   50,   50,   50,   50,   50,   50,   50,   50,   50,   50
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1600
+    , 50
+#endif
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    , 50
+#endif
+};
 
 static const int core_millivolts[MAX_DVFS_FREQS] = {
 	950, 1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350};
@@ -53,7 +67,11 @@ static int cpu_below_core = VDD_CPU_BELOW_VDD_CORE;
 
 static struct dvfs_rail tegra3_dvfs_rail_vdd_cpu = {
 	.reg_id = "vdd_cpu",
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    .max_millivolts = 1350,
+#else
 	.max_millivolts = 1250,
+#endif
 	.min_millivolts = 725,
 	.step = VDD_SAFE_STEP,
 	.jmp_to_zero = true,
@@ -176,7 +194,19 @@ static struct dvfs cpu_dvfs_table[] = {
 
 	CPU_DVFS("cpu_g",  7, 0, MHZ, 460, 460, 550, 550,  680,  680,  680,  820,  970,  970, 1040, 1080, 1150, 1200, 1280, 1300),
 	CPU_DVFS("cpu_g",  7, 1, MHZ, 480, 480, 650, 650,  780,  780,  780,  990, 1040, 1040, 1100, 1200, 1300),
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    /* Experimental points, based on Clemsyn's 1.8 GHz/1350 mV branch.
+     * Keep the real speedo/process identity and the proven lower points.
+     */
+    CPU_DVFS("cpu_g", 7, 2, MHZ, 520, 520, 700, 700, 860, 860, 860, 1050, 1150, 1150, 1200, 1300, 1300, 1300, 1300, 1300, 1400, 1500, 1500, 1500, 1500, 1600, 1800),
+#elif defined(CONFIG_TEGRA3_GROUPER_CPU_OC_1600)
+    CPU_DVFS("cpu_g", 7, 2, MHZ, 520, 520, 700, 700, 860, 860, 860, 1050, 1150, 1150, 1200, 1300, 1300, 1300, 1300, 1300, 1400, 1500, 1500, 1500, 1500, 1600),
+#elif defined(CONFIG_TEGRA3_GROUPER_CPU_OC_1400)
+	/* Keep lower points unchanged; 1.4 GHz uses the 1150 mV nominal ceiling. */
+	CPU_DVFS("cpu_g",  7, 2, MHZ, 520, 520, 700, 700,  860,  860,  860, 1050, 1150, 1150, 1200, 1300, 1300, 1300, 1300, 1300, 1400),
+#else
 	CPU_DVFS("cpu_g",  7, 2, MHZ, 520, 520, 700, 700,  860,  860,  860, 1050, 1150, 1150, 1200, 1300),
+#endif
 	CPU_DVFS("cpu_g",  7, 3, MHZ, 550, 550, 770, 770,  910,  910,  910, 1150, 1230, 1230, 1300),
 	CPU_DVFS("cpu_g",  7, 4, MHZ, 550, 550, 770, 770,  940,  940,  940, 1160, 1300, 1300),
 	
@@ -531,7 +561,16 @@ static int __init get_cpu_nominal_mv_index(
 	BUG_ON(i == 0);
 	mv = cpu_millivolts[i - 1];
 	BUG_ON(mv < tegra3_dvfs_rail_vdd_cpu.min_millivolts);
-	mv = min(mv, tegra_cpu_speedo_mv());
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    if (speedo_id == 7 && process_id == 2)
+        mv = min(mv, 1350);
+    else
+#elif defined(CONFIG_TEGRA3_GROUPER_CPU_OC_1600)
+    if (speedo_id == 7 && process_id == 2)
+        mv = min(mv, 1250);
+    else
+#endif
+        mv = min(mv, tegra_cpu_speedo_mv());
 
 	/*
 	 * Find matching cpu dvfs entry, and use it to determine index to the
@@ -578,6 +617,11 @@ static int __init get_core_nominal_mv_index(int speedo_id)
 	int i;
 	int mv = tegra_core_speedo_mv();
 	int core_edp_limit = get_core_edp();
+#ifdef CONFIG_TEGRA3_GROUPER_GPU_OC_600
+	if (tegra_cpu_speedo_id() == 7 && speedo_id == 1 &&
+	    tegra_core_process_id() == 0)
+		mv = 1300;
+#endif
 
 	/*
 	 * Start with nominal level for the chips with this speedo_id. Then,
@@ -605,6 +649,47 @@ static int __init get_core_nominal_mv_index(int speedo_id)
 	return (i - 1);
 }
 
+#ifdef CONFIG_TEGRA3_GROUPER_GPU_OC_600
+static void __init grouper_gpu_oc_600(int cpu_speedo, int soc_speedo,
+                                    int core_process)
+{
+	int i, j;
+
+	/* Keep the real fuse identity and existing thermal limits.
+	 * These engines share PLL_C/cbus with GR3D and run at the same rate;
+	 * host1x follows at half rate. Do not alter EMC, CPU or other bins.
+	 */
+	if (cpu_speedo != 7 || soc_speedo != 1 || core_process != 0)
+		return;
+	for (i = 0; i < ARRAY_SIZE(core_dvfs_table); i++) {
+		struct dvfs *d = &core_dvfs_table[i];
+		if (!strcmp(d->clk_name, "pll_c")) {
+			/* cbus is PLL_C / 2: 550/600 MHz need 1.1/1.2 GHz. */
+			d->freqs[6] = max(d->freqs[6], 1100000UL);
+			d->freqs[7] = max(d->freqs[7], 1200000UL);
+			d->freqs[8] = max(d->freqs[8], 1200000UL);
+		}
+		if (d->speedo_id != 1)
+			continue;
+		if (!strcmp(d->clk_name, "host1x")) {
+			d->freqs[6] = 275000;
+			d->freqs[7] = d->freqs[8] = 300000;
+		}
+		if (strcmp(d->clk_name, "3d") && strcmp(d->clk_name, "3d2") &&
+		    strcmp(d->clk_name, "2d") && strcmp(d->clk_name, "epp") &&
+		    strcmp(d->clk_name, "mpe") && strcmp(d->clk_name, "vde") &&
+		    strcmp(d->clk_name, "se") && strcmp(d->clk_name, "cbus"))
+			continue;
+		/* Clemsyn GPU_OC_600 higher points, preserving lower stock ones. */
+		d->freqs[5] = 500000; /* 1200 mV */
+		d->freqs[6] = 550000; /* 1250 mV */
+		for (j = 7; j < 9; j++)
+			d->freqs[j] = 600000; /* 1300 mV */
+	}
+	pr_info("Grouper GPU/cbus OC: 600 MHz maximum, 1300 mV core limit\n");
+}
+#endif
+
 void __init tegra_soc_init_dvfs(void)
 {
 	int cpu_speedo_id = tegra_cpu_speedo_id();
@@ -625,6 +710,10 @@ void __init tegra_soc_init_dvfs(void)
 #endif
 #ifndef CONFIG_TEGRA_CPU_DVFS
 	tegra_dvfs_cpu_disabled = true;
+#endif
+
+#ifdef CONFIG_TEGRA3_GROUPER_GPU_OC_600
+	grouper_gpu_oc_600(cpu_speedo_id, soc_speedo_id, tegra_core_process_id());
 #endif
 
 	/*
@@ -986,3 +1075,50 @@ static int __init tegra_dvfs_init_core_cap(void)
 	return 0;
 }
 late_initcall(tegra_dvfs_init_core_cap);
+
+#ifdef CONFIG_TEGRA3_GROUPER_GPU_OC_600
+/* Separate ceiling vote: thermal cap.cbus remains independent and effective. */
+static int __init grouper_gpu_init_boot_cap(void)
+{
+	struct clk *cap;
+	int ret;
+
+	if (tegra_cpu_speedo_id() != 7 || tegra_soc_speedo_id() != 1 ||
+	    tegra_core_process_id() != 0)
+		return 0;
+	cap = clk_get_sys("grouper_gpu_cap.cbus", NULL);
+	if (IS_ERR(cap))
+		return PTR_ERR(cap);
+	ret = clk_set_rate(cap, 380000000);
+	if (!ret)
+		ret = clk_enable(cap);
+	clk_put(cap);
+	return ret;
+}
+/* Limit cbus before host1x rootfs_initcall probes and before DVFS
+ * connects to the physical regulator in late_initcall. */
+postcore_initcall(grouper_gpu_init_boot_cap);
+
+/* dvfs.o precedes tegra3_dvfs.o in the link: this follows regulator connect. */
+static int __init grouper_gpu_init_running_cap(void)
+{
+	struct clk *cap;
+	int ret;
+
+	if (tegra_cpu_speedo_id() != 7 || tegra_soc_speedo_id() != 1 ||
+	    tegra_core_process_id() != 0)
+		return 0;
+	if (!tegra3_dvfs_rail_vdd_core.reg || tegra3_dvfs_rail_vdd_core.disabled ||
+	    !tegra3_dvfs_rail_vdd_cpu.reg || tegra3_dvfs_rail_vdd_cpu.disabled) {
+		pr_err("Grouper GPU OC: DVFS unavailable; retaining 380 MHz cap\n");
+		return -ENODEV;
+	}
+	cap = clk_get_sys("grouper_gpu_cap.cbus", NULL);
+	if (IS_ERR(cap))
+		return PTR_ERR(cap);
+	ret = clk_set_rate(cap, CONFIG_TEGRA3_GROUPER_GPU_BOOT_CAP * 1000000UL);
+	clk_put(cap);
+	return ret;
+}
+late_initcall(grouper_gpu_init_running_cap);
+#endif

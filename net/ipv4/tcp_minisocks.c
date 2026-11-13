@@ -442,6 +442,10 @@ struct sock *tcp_create_openreq_child(struct sock *sk, struct request_sock *req,
 		 * Presumed copied, in order of appearance:
 		 *	cookie_in_always, cookie_out_never
 		 */
+		atomic64_set(&newtp->diag_bytes_acked, 0);
+		atomic64_set(&newtp->diag_bytes_received, 0);
+		newtp->segs_in = newtp->segs_out = 0;
+
 		if (oldcvp != NULL) {
 			struct tcp_cookie_values *newcvp =
 				kzalloc(sizeof(*newtp->cookie_values),

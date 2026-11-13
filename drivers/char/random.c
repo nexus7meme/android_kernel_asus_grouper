@@ -238,6 +238,7 @@
 #include <linux/fcntl.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#include <linux/syscalls.h>
 #include <linux/poll.h>
 #include <linux/init.h>
 #include <linux/fs.h>
@@ -256,6 +257,7 @@
 #include <asm/processor.h>
 #include <asm/uaccess.h>
 #include <asm/irq.h>
+#include <asm/irq_regs.h>
 #include <asm/io.h>
 
 /*
@@ -421,6 +423,8 @@ struct entropy_store {
 	spinlock_t lock;
 	unsigned add_ptr;
 	int entropy_count;
+	int entropy_total;
+	bool initialized;
 	int input_rotate;
 	__u8 last_data[EXTRACT_SIZE];
 };
@@ -464,12 +468,14 @@ static struct entropy_store nonblocking_pool = {
  * it's cheap to do so and helps slightly in the expected case where
  * the entropy is concentrated in the low-order bits.
  */
+static __u32 const twist_table[8] = {
+		0x00000000, 0x3b6e20c8, 0x76dc4190, 0x4db26158,
+		0xedb88320, 0xd6d6a3e8, 0x9b64c2b0, 0xa00ae278 };
+
 static void mix_pool_bytes_extract(struct entropy_store *r, const void *in,
 				   int nbytes, __u8 out[64])
 {
-	static __u32 const twist_table[8] = {
-		0x00000000, 0x3b6e20c8, 0x76dc4190, 0x4db26158,
-		0xedb88320, 0xd6d6a3e8, 0x9b64c2b0, 0xa00ae278 };
+
 	unsigned long i, j, tap1, tap2, tap3, tap4, tap5;
 	int input_rotate;
 	int wordmask = r->poolinfo->poolwords - 1;
@@ -550,6 +556,17 @@ static void credit_entropy_bits(struct entropy_store *r, int nbits)
 	} else if (entropy_count > r->poolinfo->POOLBITS)
 		entropy_count = r->poolinfo->POOLBITS;
 	r->entropy_count = entropy_count;
+
+	/* Track real credited entropy, including entropy transferred from the
+	 * primary pool. Mixing timestamps or uncredited writes is insufficient. */
+	if (!r->initialized && nbits > 0) {
+		r->entropy_total += min(nbits, 128);
+		if (r->entropy_total >= 128) {
+			r->initialized = true;
+			if (r == &nonblocking_pool)
+				wake_up_interruptible(&random_read_wait);
+		}
+	}
 
 	/* should we wake readers? */
 	if (r == &input_pool && entropy_count >= random_read_wakeup_thresh) {
@@ -696,17 +713,84 @@ void add_input_randomness(unsigned int type, unsigned int code,
 }
 EXPORT_SYMBOL_GPL(add_input_randomness);
 
-void add_interrupt_randomness(int irq)
+struct fast_pool {
+	__u32		pool[4];
+	unsigned long	last;
+	unsigned short	count;
+	unsigned char	rotate;
+	unsigned char	last_timer_intr;
+};
+
+/*
+ * This is a fast mixing routine used by the interrupt randomness
+ * collector.  It's hardcoded for an 128 bit pool and assumes that any
+ * locks that might be needed are taken by the caller.
+ */
+static void fast_mix(struct fast_pool *f, const void *in, int nbytes)
 {
-	struct timer_rand_state *state;
+	const char	*bytes = in;
+	__u32		w;
+	unsigned	i = f->count;
+	unsigned	input_rotate = f->rotate;
 
-	state = get_timer_rand_state(irq);
+	while (nbytes--) {
+		w = rol32(*bytes++, input_rotate & 31) ^ f->pool[i & 3] ^
+			f->pool[(i + 1) & 3];
+		f->pool[i & 3] = (w >> 3) ^ twist_table[w & 7];
+		input_rotate += (i++ & 3) ? 7 : 14;
+	}
+	f->count = i;
+	f->rotate = input_rotate;
+}
 
-	if (state == NULL)
+static DEFINE_PER_CPU(struct fast_pool, irq_randomness);
+
+void add_interrupt_randomness_flags(int irq, int irq_flags)
+{
+	struct entropy_store	*r;
+	struct fast_pool	*fast_pool = &__get_cpu_var(irq_randomness);
+	struct pt_regs		*regs = get_irq_regs();
+	unsigned long		now = jiffies;
+	__u32			input[4] = { 0 }, cycles = get_cycles();
+
+	input[0] = cycles ^ jiffies;
+	input[1] = irq;
+	if (regs) {
+		__u64 ip = instruction_pointer(regs);
+		input[2] = ip;
+		input[3] = ip >> 32;
+	}
+
+	fast_mix(fast_pool, input, sizeof(input));
+
+	if ((fast_pool->count & 1023) &&
+	    !time_after(now, fast_pool->last + HZ))
 		return;
 
-	DEBUG_ENT("irq event %d\n", irq);
-	add_timer_randomness(state, 0x100 + irq);
+	fast_pool->last = now;
+
+	r = nonblocking_pool.initialized ? &input_pool : &nonblocking_pool;
+	mix_pool_bytes(r, &fast_pool->pool, sizeof(fast_pool->pool));
+	/*
+	 * If we don't have a valid cycle counter, and we see
+	 * back-to-back timer interrupts, then skip giving credit for
+	 * any entropy.
+	 */
+	if (cycles == 0) {
+		if (irq_flags & __IRQF_TIMER) {
+			if (fast_pool->last_timer_intr)
+				return;
+			fast_pool->last_timer_intr = 1;
+		} else
+			fast_pool->last_timer_intr = 0;
+	}
+	credit_entropy_bits(r, 1);
+}
+
+/* Retain the exported legacy driver interface. */
+void add_interrupt_randomness(int irq)
+{
+	add_interrupt_randomness_flags(irq, 0);
 }
 
 #ifdef CONFIG_BLOCK
@@ -952,6 +1036,8 @@ static void init_std_data(struct entropy_store *r)
 
 	spin_lock_irqsave(&r->lock, flags);
 	r->entropy_count = 0;
+	r->entropy_total = 0;
+	r->initialized = false;
 	spin_unlock_irqrestore(&r->lock, flags);
 
 	now = ktime_get_real();
@@ -1002,7 +1088,7 @@ void rand_initialize_disk(struct gendisk *disk)
 #endif
 
 static ssize_t
-random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+_random_read(bool nonblock, char __user *buf, size_t nbytes)
 {
 	ssize_t n, retval = 0, count = 0;
 
@@ -1022,7 +1108,7 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 			  n*8, (nbytes-n)*8);
 
 		if (n == 0) {
-			if (file->f_flags & O_NONBLOCK) {
+			if (nonblock) {
 				retval = -EAGAIN;
 				break;
 			}
@@ -1058,9 +1144,47 @@ random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 }
 
 static ssize_t
+random_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
+{
+	return _random_read(file->f_flags & O_NONBLOCK, buf, nbytes);
+}
+
+static ssize_t
 urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
 {
 	return extract_entropy_user(&nonblocking_pool, buf, nbytes);
+}
+
+/* Android 11's BoringSSL requires the Linux getrandom ABI. Retain the
+ * existing generator and entropy accounting, but never expose its output via
+ * this syscall before the nonblocking pool has received 128 credited bits. */
+SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count,
+		unsigned int, flags)
+{
+	int error;
+
+	if (flags & ~(GRND_NONBLOCK | GRND_RANDOM))
+		return -EINVAL;
+	if (count > INT_MAX)
+		count = INT_MAX;
+	if (flags & GRND_RANDOM)
+		return _random_read(flags & GRND_NONBLOCK, buf, count);
+
+	while (!ACCESS_ONCE(nonblocking_pool.initialized)) {
+		/* Pool seeding must happen before waiting: this old generator only
+		 * transfers primary entropy when a secondary reader requests it. */
+		xfer_secondary_pool(&nonblocking_pool, 16);
+		if (ACCESS_ONCE(nonblocking_pool.initialized))
+			break;
+		if (flags & GRND_NONBLOCK)
+			return -EAGAIN;
+		error = wait_event_interruptible(random_read_wait,
+			ACCESS_ONCE(nonblocking_pool.initialized) ||
+			input_pool.entropy_count >= 128 + 2 * random_read_wakeup_thresh);
+		if (error)
+			return error;
+	}
+	return urandom_read(NULL, buf, count, NULL);
 }
 
 static unsigned int

@@ -166,6 +166,12 @@ struct tcp_info {
 	__u32	tcpi_rcv_space;
 
 	__u32	tcpi_total_retrans;
+	__u64 tcpi_pacing_rate;
+	__u64 tcpi_max_pacing_rate;
+	__u64 tcpi_bytes_acked;
+	__u64 tcpi_bytes_received;
+	__u32 tcpi_segs_out;
+	__u32 tcpi_segs_in;
 };
 
 /* for TCP_MD5SIG socket option */
@@ -293,6 +299,12 @@ static inline struct tcp_request_sock *tcp_rsk(const struct request_sock *req)
 struct tcp_sock {
 	/* inet_connection_sock has to be the first member of tcp_sock */
 	struct inet_connection_sock	inet_conn;
+	/* Diagnostic lifetime counters, separate from ABC's bytes_acked. */
+	atomic64_t diag_bytes_acked;
+	atomic64_t diag_bytes_received;
+	u32 segs_out;
+	u32 segs_in;
+
 	u16	tcp_header_len;	/* Bytes of tcp header to send		*/
 	u16	xmit_size_goal_segs; /* Goal for segmenting output packets */
 

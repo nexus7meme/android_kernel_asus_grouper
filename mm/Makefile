@@ -5,7 +5,7 @@
 mmu-y			:= nommu.o
 mmu-$(CONFIG_MMU)	:= fremap.o highmem.o madvise.o memory.o mincore.o \
 			   mlock.o mmap.o mprotect.o mremap.o msync.o rmap.o \
-			   vmalloc.o pagewalk.o pgtable-generic.o
+			   vmalloc.o pagewalk.o pgtable-generic.o process_vm_access.o
 
 obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
 			   maccess.o page_alloc.o page-writeback.o \
@@ -16,6 +16,7 @@ obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
 			   showmem.o vmpressure.o
 
 obj-y += init-mm.o
+obj-$(CONFIG_SHMEM) += memfd.o
 
 ifdef CONFIG_NO_BOOTMEM
 	obj-y		+= nobootmem.o

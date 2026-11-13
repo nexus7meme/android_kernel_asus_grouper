@@ -40,6 +40,7 @@
 #include <mach/edp.h>
 
 #include "clock.h"
+#include "fuse.h"
 #include "cpu-tegra.h"
 #include "dvfs.h"
 
@@ -683,6 +684,11 @@ static int tegra_cpu_init(struct cpufreq_policy *policy)
 	clk_enable(cpu_clk);
 
 	cpufreq_frequency_table_cpuinfo(policy, freq_table);
+#ifdef CONFIG_TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+    /* Always recover to the tested ceiling after a failed experiment. */
+    if (tegra_cpu_speedo_id() == 7 && tegra_cpu_process_id() == 2)
+        policy->max = min(policy->max, 1400000U);
+#endif
 	cpufreq_frequency_table_get_attr(freq_table, policy->cpu);
 	policy->cur = tegra_getspeed(policy->cpu);
 	target_cpu_speed[policy->cpu] = policy->cur;

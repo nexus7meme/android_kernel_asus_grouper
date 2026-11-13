@@ -1915,7 +1915,11 @@ static int elan_ktf3k_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 
 	scr_suspended = true;
 	rc = cancel_work_sync(&ts->work);
-	if (rc && !dt2w_switch)
+	/* A cancelled pending worker cannot balance the IRQ disable in the
+	 * interrupt handler. Restore that reference even with double-tap wake;
+	 * otherwise wake gestures can leave touch IRQs disabled permanently.
+	 */
+	if (rc)
 		enable_irq(client->irq);
 
 	if((work_lock == 0) && !dt2w_switch)

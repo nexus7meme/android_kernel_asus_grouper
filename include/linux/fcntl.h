@@ -27,6 +27,13 @@
 #define F_SETPIPE_SZ	(F_LINUX_SPECIFIC_BASE + 7)
 #define F_GETPIPE_SZ	(F_LINUX_SPECIFIC_BASE + 8)
 
+#define F_ADD_SEALS	(F_LINUX_SPECIFIC_BASE + 9)
+#define F_GET_SEALS	(F_LINUX_SPECIFIC_BASE + 10)
+#define F_SEAL_SEAL	0x0001
+#define F_SEAL_SHRINK	0x0002
+#define F_SEAL_GROW	0x0004
+#define F_SEAL_WRITE	0x0008
+
 /*
  * Types of directory notifications that may be requested.
  */

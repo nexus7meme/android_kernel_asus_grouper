@@ -12,6 +12,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 config ARM
+	select HAVE_ARCH_MMAP_RND_BITS if MMU
 	bool
 	default y
 	select HAVE_AOUT
@@ -244,6 +245,15 @@ source "init/Kconfig"
 source "kernel/Kconfig.freezer"
 
 menu "System Type"
+
+config ARCH_MMAP_RND_BITS_MIN
+	default 8
+
+config ARCH_MMAP_RND_BITS_MAX
+	default 14 if PAGE_OFFSET=0x40000000
+	default 15 if PAGE_OFFSET=0x80000000
+	default 16
+
 
 config MMU
 	bool "MMU-based Paged Memory Management Support"

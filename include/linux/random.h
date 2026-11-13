@@ -11,6 +11,10 @@
 #include <linux/ioctl.h>
 #include <linux/irqnr.h>
 
+/* getrandom(2) flags */
+#define GRND_NONBLOCK 0x0001
+#define GRND_RANDOM   0x0002
+
 /* ioctl()'s for the random number generator */
 
 /* Get the entropy count. */
@@ -53,6 +57,7 @@ extern void rand_initialize_irq(int irq);
 extern void add_input_randomness(unsigned int type, unsigned int code,
 				 unsigned int value);
 extern void add_interrupt_randomness(int irq);
+extern void add_interrupt_randomness_flags(int irq, int irq_flags);
 
 extern void get_random_bytes(void *buf, int nbytes);
 void generate_random_uuid(unsigned char uuid_out[16]);

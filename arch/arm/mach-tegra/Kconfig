@@ -439,6 +439,56 @@ config TEGRA_LP1_950
 	help
 	  Enable support for LP1 Core voltage to set to lowest
 
+config TEGRA3_GROUPER_GPU_OC_600
+	bool "Grouper T30L GPU/shared-engine operating points up to 600 MHz"
+	depends on ARCH_TEGRA_3x_SOC && MACH_GROUPER
+	default n
+	help
+	  Enable 500/550/600 MHz GPU/cbus points at 1200/1250/1300 mV
+	  for CPU speedo 7, SoC speedo 1, core process 0. Other cbus engines
+	  share this rate and host1x runs at half rate. Raises the default
+	  core EDP voltage ceiling to 1300 mV only for this silicon bin;
+	  explicit core_edp_mv boot overrides are still honored.
+	  Preserve lower points, fuse identity, EMC and CPU clocks and
+	  existing thermal protections. Based on Clemsyn GPU_OC_600.
+
+config TEGRA3_GROUPER_GPU_BOOT_CAP
+	int "Grouper GPU boot ceiling in MHz"
+	depends on TEGRA3_GROUPER_GPU_OC_600
+	range 380 600
+	default 600
+	help
+	  A separate shared-bus ceiling vote, independent of thermal caps.
+	  Use 380 during bring-up and raise its clock rate for bounded tests.
+
+config TEGRA3_GROUPER_CPU_OC_1600
+	bool "Grouper T30L 1.6 GHz CPU operating point"
+	depends on TEGRA3_GROUPER_CPU_OC_1400
+	default n
+	help
+	  Enable speedo 7/process 2 points up to 1.6 GHz at the existing
+	  1250 mV software rail limit. Keep the real fuse identity and the
+	  existing cold/hot EDP, GPU, memory and shutdown limits.
+
+config TEGRA3_GROUPER_CPU_OC_1800_EXPERIMENT
+	bool "Experimental Grouper T30L 1.8 GHz CPU point"
+	depends on TEGRA3_GROUPER_CPU_OC_1600
+	default n
+	help
+	  Experimental speedo 7/process 2 points up to 1.8 GHz at 1350 mV.
+	  Boot policy remains capped at 1.4 GHz; higher clocks require an
+	  explicit runtime policy change. Do not change the reported fuse bin.
+	  GPU/EMC clocks, cold/hot EDP limits and shutdown remain unchanged.
+
+config TEGRA3_GROUPER_CPU_OC_1400
+	bool "Grouper T30L 1.4 GHz CPU operating point"
+	depends on ARCH_TEGRA_3x_SOC && MACH_GROUPER
+	default n
+	help
+	  Enable a 1.4 GHz point at 1150 mV for CPU speedo 7, process 2.
+	  Only the 45 C EDP row is extended; cold and 60 C/hotter limits
+	  remain unchanged. Other silicon bins retain their existing tables.
+
 config TEGRA3_LP_CORE_OVERDRIVE
 	bool "T3 LP Core Overdrive"
 	depends on ARCH_TEGRA_3x_SOC
